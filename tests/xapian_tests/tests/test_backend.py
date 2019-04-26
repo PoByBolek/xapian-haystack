@@ -648,10 +648,10 @@ class BackendFeaturesTestCase(HaystackBackendTestCase, TestCase):
                                  xapian12string='VALUE_RANGE 11 80 ad')
         self.assertExpectedQuery(self.backend.parse_query('number:..10'),
                                  [
-                                     '0 * VALUE_LE 11 ad',
-                                     'VALUE_LE 11 ad',
+                                     '0 * VALUE_RANGE 11 00 ad',
+                                     'VALUE_RANGE 11 00 ad',
                                  ],
-                                 xapian12string='VALUE_LE 11 ad')
+                                 xapian12string='VALUE_RANGE 11 00 ad')
         self.assertExpectedQuery(self.backend.parse_query('number:10..*'),
                                  [
                                      '0 * VALUE_RANGE 11 ad ffffffffffffffffff',

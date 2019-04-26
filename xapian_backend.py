@@ -124,12 +124,19 @@ class XHValueRangeProcessor(xapian.ValueRangeProcessor):
                     elif field_type == 'integer':
                         begin = _term_to_xapian_value(int(begin), field_type)
                 else:
+                    # TODO: when we drop support for xapian 1.2, we can simply
+                    # return empty strings for begin and end, and xapian would
+                    # turn the VALUE_RANGE query into VALUE_GE and VALUE_LE
+                    # queries instead.
                     if field_type == 'text':
                         begin = 'a'  # TODO: A better way of getting a min text value?
                     elif field_type in ('float', 'integer'):
-                        # floats and ints are both serialised using xapian.sortable_serialise
-                        # so we can use -Infinity as the lower bound for both of them.
-                        begin = _term_to_xapian_value(float('-inf'), field_type)
+                        # floats and ints are both serialised using xapian.sortable_serialise.
+                        # Unfortunately, we can't use -Infinity as the lower bound because
+                        # it serialises to '', which doesn't work with xapian 1.2
+                        # However, even -2**1023 serialises to '101e' so '00' would compare less
+                        # to that (and probably all other double values).
+                        begin = '00'
                     elif field_type == 'date' or field_type == 'datetime':
                         begin = '00010101000000'
 
