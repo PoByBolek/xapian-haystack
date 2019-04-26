@@ -971,13 +971,7 @@ class XapianSearchBackend(BaseSearchBackend):
 
             facet_dict[field_name] = []
             for facet in list(spy.values()):
-                if field_type == 'float':
-                    # the float term is a Xapian serialized object, which is
-                    # in bytes.
-                    term = facet.term
-                else:
-                    term = facet.term.decode('utf-8')
-
+                term = facet.term.decode('utf-8')
                 facet_dict[field_name].append((_from_xapian_value(term, field_type),
                                                facet.termfreq))
         return facet_dict
@@ -1546,43 +1540,37 @@ class XapianSearchQuery(BaseSearchQuery):
         Private method that returns a xapian.Query that searches for any term
         that is greater than `term` in a specified `field`.
         """
-        vrp = XHValueRangeProcessor(self.backend)
-        pos, begin, end = vrp('%s:%s' % (field_name, _term_to_xapian_value(term, field_type)), '*')
+        pos = self.backend.column[field_name]
+        range_limit = _term_to_xapian_value(term, field_type)
+        result = xapian.Query(xapian.Query.OP_VALUE_GE, pos, range_limit)
         if is_not:
-            return xapian.Query(xapian.Query.OP_AND_NOT,
-                                self._all_query(),
-                                xapian.Query(xapian.Query.OP_VALUE_RANGE, pos, begin, end)
-                                )
-        return xapian.Query(xapian.Query.OP_VALUE_RANGE, pos, begin, end)
+            result = xapian.Query(xapian.Query.OP_AND_NOT, self._all_query(), result)
+        return result
 
     def _filter_lte(self, term, field_name, field_type, is_not):
         """
         Private method that returns a xapian.Query that searches for any term
         that is less than `term` in a specified `field`.
         """
-        vrp = XHValueRangeProcessor(self.backend)
-        pos, begin, end = vrp('%s:' % field_name, '%s' % _term_to_xapian_value(term, field_type))
+        pos = self.backend.column[field_name]
+        range_limit = _term_to_xapian_value(term, field_type)
+        result = xapian.Query(xapian.Query.OP_VALUE_LE, pos, range_limit)
         if is_not:
-            return xapian.Query(xapian.Query.OP_AND_NOT,
-                                self._all_query(),
-                                xapian.Query(xapian.Query.OP_VALUE_RANGE, pos, begin, end)
-                                )
-        return xapian.Query(xapian.Query.OP_VALUE_RANGE, pos, begin, end)
+            result = xapian.Query(xapian.Query.OP_AND_NOT, self._all_query(), result)
+        return result
 
     def _filter_range(self, term, field_name, field_type, is_not):
         """
         Private method that returns a xapian.Query that searches for any term
         that is between the values from the `term` list.
         """
-        vrp = XHValueRangeProcessor(self.backend)
-        pos, begin, end = vrp('%s:%s' % (field_name, _term_to_xapian_value(term[0], field_type)),
-                              '%s' % _term_to_xapian_value(term[1], field_type))
+        pos = self.backend.column[field_name]
+        range_lower = _term_to_xapian_value(term[0], field_type)
+        range_upper = _term_to_xapian_value(term[1], field_type)
+        result = xapian.Query(xapian.Query.OP_VALUE_RANGE, pos, range_lower, range_upper)
         if is_not:
-            return xapian.Query(xapian.Query.OP_AND_NOT,
-                                self._all_query(),
-                                xapian.Query(xapian.Query.OP_VALUE_RANGE, pos, begin, end)
-                                )
-        return xapian.Query(xapian.Query.OP_VALUE_RANGE, pos, begin, end)
+            result = xapian.Query(xapian.Query.OP_AND_NOT, self._all_query(), result)
+        return result
 
 
 def _term_to_xapian_value(term, field_type):
@@ -1611,6 +1599,19 @@ def _term_to_xapian_value(term, field_type):
         value = INTEGER_FORMAT % term
     elif field_type == 'float':
         value = xapian.sortable_serialise(term)
+        # sortable_serialise() returns str in Python 2 but bytes in Python 3
+        # but we can only pass str (in both Python 2 and 3) to Query and others.
+        # However, xapian.Query tries to interpret the string we pass to it as
+        # a UTF-8 encoded string, which the result of sortable_serialise()
+        # definitely isn't.
+        # So we encode the byte string as hex characters instead which have the
+        # same sort order as the actual bytes.
+        if hasattr(value, 'hex'):
+            # Convert the bytes to a hex string in Python 3.
+            value = value.hex().lower()
+        else:
+            # Convert the bytes to a hex string in Python 2.
+            value = value.encode('hex').lower()
     elif field_type == 'date' or field_type == 'datetime':
         if field_type == 'date':
             # http://stackoverflow.com/a/1937636/931303 and comments
@@ -1648,6 +1649,12 @@ def _from_xapian_value(value, field_type):
     elif field_type == 'integer':
         return int(value)
     elif field_type == 'float':
+        if hasattr(bytes, 'fromhex'):
+            # Convert the hex string to bytes in Python 3.
+            value = bytes.fromhex(value)
+        else:
+            # Convert the hex string to bytes in Python 2.
+            value = value.decode('hex')
         return xapian.sortable_unserialise(value)
     elif field_type == 'date' or field_type == 'datetime':
         datetime_value = datetime.datetime.strptime(value, DATETIME_FORMAT)
