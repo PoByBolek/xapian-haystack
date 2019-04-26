@@ -43,9 +43,10 @@ else
     XAPIAN_CONFIG=
 fi
 
-# The bindings for Python require python-sphinx
+# The bindings for Python require python-sphinx but fail to build with sphinx >= 2.0
+# because they check for sphinx.main which is gone in sphinx >= 2.0
 echo "Installing Python-Sphinx..."
-pip install sphinx
+pip install 'sphinx<2.0'
 
 echo "Installing Xapian-bindings..."
 cd $VIRTUAL_ENV/packages/${BINDINGS}
