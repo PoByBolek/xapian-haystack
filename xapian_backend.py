@@ -118,31 +118,36 @@ class XHValueRangeProcessor(xapian.ValueRangeProcessor):
             if field_dict['field_name'] == field_name:
                 field_type = field_dict['type']
 
-                if not begin:
+                if begin:
+                    if field_type == 'float':
+                        begin = _term_to_xapian_value(float(begin), field_type)
+                    elif field_type == 'integer':
+                        begin = _term_to_xapian_value(int(begin), field_type)
+                else:
                     if field_type == 'text':
                         begin = 'a'  # TODO: A better way of getting a min text value?
-                    elif field_type == 'integer':
-                        begin = -sys.maxsize - 1
-                    elif field_type == 'float':
-                        begin = float('-inf')
+                    elif field_type in ('float', 'integer'):
+                        # floats and ints are both serialised using xapian.sortable_serialise
+                        # so we can use -Infinity as the lower bound for both of them.
+                        begin = _term_to_xapian_value(float('-inf'), field_type)
                     elif field_type == 'date' or field_type == 'datetime':
                         begin = '00010101000000'
-                elif end == '*':
+
+                if end == '*':
                     if field_type == 'text':
                         end = 'z' * 100  # TODO: A better way of getting a max text value?
-                    elif field_type == 'integer':
-                        end = sys.maxsize
-                    elif field_type == 'float':
-                        end = float('inf')
+                    elif field_type in ('float', 'integer'):
+                        # floats and ints are both serialised using xapian.sortable_serialise
+                        # so we can use +Infinity as the upper bound for both of them.
+                        end = _term_to_xapian_value(float('inf'), field_type)
                     elif field_type == 'date' or field_type == 'datetime':
                         end = '99990101000000'
+                else:
+                    if field_type == 'float':
+                        end = _term_to_xapian_value(float(end), field_type)
+                    elif field_type == 'integer':
+                        end = _term_to_xapian_value(int(end), field_type)
 
-                if field_type == 'float':
-                    begin = _term_to_xapian_value(float(begin), field_type)
-                    end = _term_to_xapian_value(float(end), field_type)
-                elif field_type == 'integer':
-                    begin = _term_to_xapian_value(int(begin), field_type)
-                    end = _term_to_xapian_value(int(end), field_type)
                 return field_dict['column'], str(begin), str(end)
 
 
@@ -1595,9 +1600,9 @@ def _term_to_xapian_value(term, field_type):
         else:
             value = 'f'
 
-    elif field_type == 'integer':
-        value = INTEGER_FORMAT % term
-    elif field_type == 'float':
+    elif field_type in ('float', 'integer'):
+        # up until 2**53 integers can be safely represented as doubles which
+        # is what sortable_serialise() deals with.
         value = xapian.sortable_serialise(term)
         # sortable_serialise() returns str in Python 2 but bytes in Python 3
         # but we can only pass str (in both Python 2 and 3) to Query and others.
@@ -1646,16 +1651,15 @@ def _from_xapian_value(value, field_type):
             return False
         else:
             InvalidIndexError('Field type "%d" does not accept value "%s"' % (field_type, value))
-    elif field_type == 'integer':
-        return int(value)
-    elif field_type == 'float':
+    elif field_type in ('float', 'integer'):
         if hasattr(bytes, 'fromhex'):
             # Convert the hex string to bytes in Python 3.
             value = bytes.fromhex(value)
         else:
             # Convert the hex string to bytes in Python 2.
             value = value.decode('hex')
-        return xapian.sortable_unserialise(value)
+        result = xapian.sortable_unserialise(value)
+        return int(result) if field_type == 'integer' else result
     elif field_type == 'date' or field_type == 'datetime':
         datetime_value = datetime.datetime.strptime(value, DATETIME_FORMAT)
         if field_type == 'datetime':
