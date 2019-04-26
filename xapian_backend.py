@@ -1,5 +1,6 @@
 from __future__ import unicode_literals
 
+import binascii
 import datetime
 import pickle
 import os
@@ -1619,11 +1620,11 @@ def _term_to_xapian_value(term, field_type):
         # So we encode the byte string as hex characters instead which have the
         # same sort order as the actual bytes.
         if hasattr(value, 'hex'):
-            # Convert the bytes to a hex string in Python 3.
+            # Convert the bytes to a hex string in Python 3.5+.
             value = value.hex().lower()
         else:
-            # Convert the bytes to a hex string in Python 2.
-            value = value.encode('hex').lower()
+            # Convert the bytes to a hex string in Python 2 and 3.4.
+            value = binascii.hexlify(value).decode('ascii').lower()
     elif field_type == 'date' or field_type == 'datetime':
         if field_type == 'date':
             # http://stackoverflow.com/a/1937636/931303 and comments
